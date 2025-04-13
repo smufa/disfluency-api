@@ -1,20 +1,13 @@
-# Disfluency Detection From Audio 
+# Disfluency Detection From Audio as an API
 
-This repo includes a demo for running audio through the language, acoustic, and multimodal disfluency detection models. 
-It also includes preprocessing code for the Switchboard dataset, to align audio, transcripts, and disfluency labels 
-(filled pauses, partial words, repetitions, revisions, and restarts) at the frame-level (every 20ms of audio). 
+This repo includes an api for running audio through the language, acoustic, and multimodal disfluency detection models. 
+It also includes extra data such as loudness and pitch. This is a fork of https://github.com/amritkromana/disfluency_detection_from_audio. 
 
 # Disfluency Detection Demo
 
 ## Dependencies 
 
-The following packages are needed: 
-- pandas==1.5.0
-- torch==1.12.1
-- torchaudio==0.12.1
-- transformers==4.22.2
-- whisper_timestamped==1.14.4
-- gdown==5.1.0
+Use uv to install dependencies.
 
 Use gdown to download the pretrained model weights and save to demo_models: 
 ```
@@ -28,60 +21,6 @@ gdown --id 1wWrmopvvdhlBw-cL7EDyih9zn_IJu5Wr -O acoustic.pt
 gdown --id 1LPchbScA_cuFx1XoNxpFCYZfGoJCfWao -O multimodal.pt
 ```
 
-## How to run the demo 
-
-Given some input.wav, we can run any of these options: 
 ```
-python3 demo.py --audio_file input.wav --output_file pred.csv --output_trans trans.csv --modality language
-```
-```
-python3 demo.py --audio_file input.wav --output_file pred.csv --modality acoustic
-```
-```
-python3 demo.py --audio_file input.wav --output_file pred.csv --modality multimodal
-```
-The ``language`` option runs a Whisper model that's been fine-tuned for verbatim transcription, and then uses the text + timestamps as input to a BERT model that's been fine-tuned for disfluency detection.
-The ``acoustic`` option runs a WavLM model that's been fine-tuned for acoustic-based disfluency detection. 
-The ``multimodal`` option runs the language and acoustic models, concatenates their embeddings, and runs them through a BLSTM fusion model. 
-The frame-level disfluency predictions will be printed to pred.csv.
-For the language option, ASR transcripts and word-level disfluency predictions will be printed to trans.csv.
-
-# Switchboard Preprocessing 
-
-## Dependencies 
-
-The following packages are needed:
-- pandas 
-- Levenshtein
-
-Prepare the data as follows: 
-- Get switchboard data through LDC: 
-  - Copy audio sph files to raw_data folder (raw_data/swb_sph)
-  - Copy ms98 transcriptions to raw_data folder (raw_data/swb_ms98_transcriptions)
-- Copy corrected disfluency labels from Zayats et al. to raw_data folder: 
-```
-cd raw_data
-wget https://raw.githubusercontent.com/vickyzayats/switchboard_corrected_reannotated/master/switchboard_corrected_with_silver_reannotation.zip
-unzip switchboard_corrected_with_silver_reannotation.zip
-mv switchboard_corrected_with_silver_reannotation.tsv swb_silver.tsv
-rm switchboard_corrected_with_silver_reannotation.zip
-```
-
-## How to run the preprocessing code
-```
-python3 run_data_prep.py 
-```
-This will create a data folder with 
-- transcripts.csv: the text and word-level disfluency labels associated with each segment (FP, RP, RV, RS, PW)
-- wav_sil: a directory with the 8k wav files associated with each segment (50 ms silence padding on either end)
-- labels_framelevel: a directory with the frame-level labels (labels for every 20 ms) 
-
-# Citation 
-This work has been submitted to IEEE Transactions on Audio, Speech and Language Processing. If you use this work in your research or projects, please cite it as follows:
-```
-@article{romana2023,
-title = {Automatic Disfluency Detection from Untranscribed Speech},
-author = {Amrit Romana, Kazuhito Koishida, Emily Mower Provost},
-year = {2023}
-}
+uv run main.py
 ```
