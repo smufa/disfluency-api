@@ -112,12 +112,12 @@ def analyze(file_contents):
     wpm = []
     end = round(pred_df.shape[0] * 0.02, 2) * 1000 - WINDOW/2
     while window_start < end:
-        wpm.append(contained_in_window(intervals, window_start, WINDOW) * (60_000/WINDOW))
+        wpm.append({"time": window_start + WINDOW/2, "value": contained_in_window(intervals, window_start, WINDOW) * (60_000/WINDOW)})
         window_start += STEP
     result['wpm'] = wpm
     waveform = waveform.cpu()
-    print(calculate_pitch(waveform, sample_rate))
-    print(calculate_aweighted_loudness(waveform, sample_rate))
+    result['pitch'] = calculate_pitch(waveform, sample_rate)
+    result['loud'] = calculate_aweighted_loudness(waveform, sample_rate)
 
     # Convert to JSON
     json_result = json.dumps(result, indent=2)
@@ -197,7 +197,7 @@ def calculate_pitch(waveform, sample_rate, frame_length=2048, hop_length=512):
         'std_pitch_hz': float(np.std(voiced_pitches)) if len(voiced_pitches) > 0 else 0
     }
     
-    return [(time, pitch) for (time, pitch) in zip(times.tolist(), pitch_values)]
+    return [{"time": time*1000, "value": pitch} for (time, pitch) in zip(times.tolist(), pitch_values)]
 
 
 
@@ -279,7 +279,7 @@ def calculate_aweighted_loudness(waveform, sample_rate, frame_length=2048, hop_l
         'num_frames': len(rms_db)
     }
     
-    return [(time, rms) for (time, rms) in zip(times.tolist(), rms_db.tolist())]
+    return [{"time": time*1000, "value": rms} for (time, rms) in zip(times.tolist(), rms_db.tolist())]
 
 
 
