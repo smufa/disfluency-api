@@ -1,0 +1,21 @@
+[project]
+name = "disfluency-detection-from-audio"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.12",
+    "gdown>=5.2.0",
+    "hf-xet>=1.0.3",
+    "librosa>=0.11.0",
+    "pandas>=2.2.3",
+    "pyloudnorm>=0.1.1",
+    "python-multipart>=0.0.20",
+    "soundfile>=0.13.1",
+    "torch>=2.6.0",
+    "torchaudio>=2.6.0",
+    "transformers>=4.51.2",
+    "uvicorn>=0.34.0",
+    "whisper-timestamped>=1.15.8",
+]

@@ -14,21 +14,20 @@ import whisper_timestamped as whisper
 from models import AcousticModel, MultimodalModel
 
 labels = ['FP', 'RP', 'RV', 'RS', 'PW']
+device='cuda'
 
-def run_asr(audio_file, device):
+model_whisper = whisper.load_model('demo_models/asr', device='cuda')
+model_whisper.to(device)
+def run_asr(audio, orgnl_sr):
 
     # Load audio file and resample to 16 kHz
-    audio, orgnl_sr = torchaudio.load(audio_file)
     audio_rs = torchaudio.functional.resample(audio, orgnl_sr, 16000)[0, :]
     audio_rs.to(device)
 
-    # Load in Whisper model that has been fine-tuned for verbatim speech transcription
-    model = whisper.load_model('demo_models/asr', device='cpu')
-    model.to(device)
-    print('loaded finetuned whisper asr') 
+
 
     # Get Whisper output
-    result = whisper.transcribe(model, audio_rs, language='en', beam_size=5, temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
+    result = whisper.transcribe(model_whisper, audio_rs, language='en', beam_size=5, temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
 
     # Convert output dictionary to a dataframe
     words = []
@@ -39,24 +38,25 @@ def run_asr(audio_file, device):
 
     return text_df
 
-def run_language_based(audio_file, text_df, device):
+tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+model_bert = BertForTokenClassification.from_pretrained('bert-base-uncased', num_labels=5)
+model_dict = torch.load('demo_models/language.pt', map_location='cuda')
+model_dict.pop('bert.embeddings.position_ids')
+model_bert.load_state_dict(model_dict)
+model_bert.config.output_hidden_states = True
+model_bert.to(device)
+
+def run_language_based(audio, orgnl_sr, text_df):
 
     # Tokenize the text
     text = ' '.join(text_df['text'])
-    tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
     tokens = tokenizer(text, return_tensors="pt")
     input_ids = tokens['input_ids'].to(device)
 
     # Initialize Bert model and load in pre-trained weights
-    model = BertForTokenClassification.from_pretrained('bert-base-uncased', num_labels=5)
-    model.load_state_dict(torch.load('demo_models/language.pt', map_location='cpu'))
-    print('loaded finetuned language model') 
-
-    model.config.output_hidden_states = True
-    model.to(device)
 
     # Get Bert output at the word-level
-    output = model.forward(input_ids=input_ids)
+    output = model_bert.forward(input_ids=input_ids)
     probs = torch.sigmoid(output.logits)
     preds = (probs > 0.5).int()[0][1:-1]
     emb = output.hidden_states[-1][0][1:-1]
@@ -69,16 +69,15 @@ def run_language_based(audio_file, text_df, device):
     df = pd.concat([text_df, pred_df, emb_df], axis=1)
 
     # Convert dataframe to frame-level output
-    frame_emb, frame_pred = convert_word_to_framelevel(audio_file, df)
+    frame_emb, frame_pred = convert_word_to_framelevel(audio, orgnl_sr, df.fillna(0))
 
     return frame_emb, frame_pred
 
-def convert_word_to_framelevel(audio_file, df):
+def convert_word_to_framelevel(audio, orgnl_sr, df):
 
     # How long does the frame-level output need to be?
     df['end'] = df['end'] + 0.01
-    info = torchaudio.info(audio_file)
-    end = info.num_frames / info.sample_rate
+    end = audio.shape[-1] / orgnl_sr
 
     # Initialize lists for frame-level predictions and embeddings (every 10 ms)
     frame_time = np.arange(0, end, 0.01).tolist()
@@ -100,10 +99,12 @@ def convert_word_to_framelevel(audio_file, df):
 
     return frame_emb, frame_pred
 
-def run_acoustic_based(audio_file, device):
+model_acu = AcousticModel()
+model_acu.load_state_dict(torch.load('demo_models/acoustic.pt', map_location='cuda'))
+model_acu.to(device)
+def run_acoustic_based(audio, orgnl_sr):
 
     # Load audio file and resample to 16 kHz
-    audio, orgnl_sr = torchaudio.load(audio_file)
     audio_rs = torchaudio.functional.resample(audio, orgnl_sr, 16000)[0, :]
     feature_extractor = Wav2Vec2FeatureExtractor(feature_size=1,
                                                  sampling_rate=16000,
@@ -115,20 +116,19 @@ def run_acoustic_based(audio_file, device):
     audio_feats = audio_feats.to(device)
 
     # Initialize WavLM model and load in pre-trained weights
-    model = AcousticModel()
-    model.load_state_dict(torch.load('demo_models/acoustic.pt', map_location='cpu'))
-    model.to(device)
-    print('loaded finetuned acoustic model') 
 
     # Get WavLM output
-    emb, output = model(audio_feats)
+    emb, output = model_acu(audio_feats)
     probs = torch.sigmoid(output)
     preds = (probs > 0.5).int()[0]
     emb = emb[0]
 
     return emb, preds
 
-def run_multimodal(language, acoustic, device):
+model_multi = MultimodalModel()
+model_multi.load_state_dict(torch.load('demo_models/multimodal.pt', map_location='cuda'))
+model_multi.to(device)
+def run_multimodal(language, acoustic):
 
     # Rounding differences may result in slightly different embedding sizes
     # Adjust so they're both the same size
@@ -140,74 +140,10 @@ def run_multimodal(language, acoustic, device):
     acoustic = acoustic.to(device)
 
     # Initialize multimodal model and load in pre-trained weights
-    model = MultimodalModel()
-    model.load_state_dict(torch.load('demo_models/multimodal.pt', map_location='cpu'))
-    model.to(device)
-    print('loaded finetuned multimodal model') 
 
     # Get multimodal output
-    output = model(language, acoustic)
+    output = model_multi(language, acoustic)
     probs = torch.sigmoid(output)
     preds = (probs > 0.5).int()[0]
 
     return preds
-
-def setup_log(log_file):
-
-    # Set up a logger
-    logger = logging.getLogger("demo_log")
-    logger.setLevel(logging.INFO)
-
-    # Create a file handler to write log messages to a file
-    file_handler = logging.FileHandler(log_file)
-
-    # Create a stream handler to display log messages on the screen
-    stream_handler = logging.StreamHandler(sys.stdout)
-
-    # Define the log format
-    log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(log_format)
-    stream_handler.setFormatter(log_format)
-
-    # Add the handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(stream_handler)
-
-    # Redirect stdout and stderr to the logger
-    sys.stdout = logger
-    sys.stderr = logger
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('--audio_file', type=str, default=None, required=True, help='path to 8k .wav file')
-    parser.add_argument('--output_trans', type=str, default=None, required=False, help='path to intermediate .csv with asr transcript')
-    parser.add_argument('--output_file', type=str, default=None, required=True, help='path to output .csv')
-    parser.add_argument('--device', type=str, default='cuda', help='cpu or cuda')
-    parser.add_argument('--modality', type=str, default='multimodal', choices=['language', 'acoustic', 'multimodal'],
-                        help='modality can be language, acoustic, or multimodal')
-
-    args = parser.parse_args()
-
-    # Setup log
-    #setup_log(args.output_file.replace('.csv', '.log'))
-
-    # Get predictions
-    text_df = None
-    if args.modality == 'language' or args.modality == 'multimodal':
-        text_df = run_asr(args.audio_file, args.device)
-        if args.output_trans is not None: 
-            text_df.to_csv(args.output_trans)
-        language_emb, preds = run_language_based(args.audio_file, text_df, args.device)
-    if args.modality == 'acoustic' or args.modality == 'multimodal':
-        acoustic_emb, preds = run_acoustic_based(args.audio_file, args.device)
-    if args.modality == 'multimodal':
-        preds = run_multimodal(language_emb, acoustic_emb, args.device)
-
-    # Save output
-    pred_df = pd.DataFrame(preds.cpu(), columns=labels).astype(int)
-    pred_df['frame_time'] = [round(i * 0.02, 2) for i in range(pred_df.shape[0])]
-    pred_df = pred_df.set_index('frame_time')
-    pred_df.to_csv(args.output_file)
-
